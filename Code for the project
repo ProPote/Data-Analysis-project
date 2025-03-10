@@ -1,0 +1,307 @@
+-- Data Cleaning Project
+
+select *
+from layoffs;
+
+-- Tasks
+-- 1. Remove duplicates
+-- 2. Standardize the data
+-- 3. Null values or blank values
+-- 4. Remove any columns
+
+create table layoffs_staging
+like layoffs;
+
+select *
+from layoffs_staging;
+
+insert layoffs_staging
+select *
+from layoffs;
+
+select *,
+row_number() OVER(
+partition by company,industry,total_laid_off,percentage_laid_off,`date`) as `row_number`
+from layoffs_staging;
+
+with duplicate_cte as
+(
+	select *,
+    row_number() OVER(
+    partition by company,location,industry,total_laid_off,percentage_laid_off,`date`,stage,country,funds_raised_millions) as `row_number`
+    from layoffs_staging
+)
+select *
+from duplicate_cte
+where `row_number`>1;
+
+select *
+from layoffs_staging
+where company='Casper';
+
+-- to delete all the duplicate rows
+with duplicate_cte as
+(
+	select *,
+    row_number() OVER(
+    partition by company,location,industry,total_laid_off,percentage_laid_off,`date`,stage,country,funds_raised_millions) as `row_number`
+    from layoffs_staging
+)
+delete 
+from duplicate_cte
+where `row_number`>1;
+
+
+CREATE TABLE `layoffs_staging2` (
+  `company` text,
+  `location` text,
+  `industry` text,
+  `total_laid_off` int DEFAULT NULL,
+  `percentage_laid_off` text,
+  `date` text,
+  `stage` text,
+  `country` text,
+  `funds_raised_millions` int DEFAULT NULL,
+  `row_number` int
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+select *
+from layoffs_staging2;
+
+-- creating a table to make a copy and then removing the duplicate rows
+CREATE TABLE `layoffs_staging3` (
+  `company` text,
+  `location` text,
+  `industry` text,
+  `total_laid_off` int DEFAULT NULL,
+  `percentage_laid_off` text,
+  `date` text,
+  `stage` text,
+  `country` text,
+  `funds_raised_millions` int DEFAULT NULL,
+  `row_number` int
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+select*
+from layoffs_staging3
+where `row_number`>1;
+
+-- inserting data into the table created to remove the duplicate data
+insert into layoffs_staging3
+	select *,
+    row_number() OVER(
+    partition by company,location,industry,total_laid_off,percentage_laid_off,`date`,stage,country,funds_raised_millions) as `row_number`
+    from layoffs_staging;
+
+-- deleting the duplicate rows which were identified by using over and partition by.
+Delete 
+from layoffs_staging3
+where `row_number`>1;
+
+select *
+from layoffs_staging3;
+
+-- standardizing data
+-- 1. trim unnecessary spaces before and after words
+select company,trim(company)
+from layoffs_staging3;
+
+-- updating table and putting in the trimmed verstion of the company name
+update layoffs_staging3
+set company = trim(company);
+
+-- Fixing the industry column
+
+select distinct industry
+from layoffs_staging3
+order by 1; -- first column is ordered in ascending order
+
+-- there are rows with 'Crypto' and 'Crypto Currency'. Both of these are the same and need to be fixed
+
+select *
+from layoffs_staging3
+where industry like 'Crypto%';
+
+-- this set of lines is to convert any crpto like industry name to crypto, as they mean the same thing
+update layoffs_staging3
+set industry='Crypto'
+where industry like 'Crypto%';
+
+select*
+from layoffs_staging3;
+
+-- You need to check each and every column and find if there is any problem.
+
+select distinct location
+from layoffs_staging3
+order by 1;
+
+select distinct country, trim(trailing '.' from country)
+from layoffs_staging3
+order by 1;
+
+update layoffs_staging3
+set country = trim(trailing '.' from country)
+where country like 'United States%';
+
+-- The date column is text type. We need to make time-series
+
+select `date`,
+str_to_date(`date`,'%m/%d/%Y')
+from layoffs_staging3;
+
+update layoffs_staging3
+set `date`=str_to_date(`date`,'%m/%d/%Y');
+
+-- never alter tables on the actual data. Staging tables should be created for such stuff
+
+-- Now convert the type from text to date. This would not have been possible without the first step
+
+alter table layoffs_staging3
+modify column `date` date;
+
+select *
+from layoffs_staging3;
+
+-- Now we need to work with null and blank values
+update layoffs_staging3
+set industry = null
+where industry = '';
+-- The above code is written to replace blanks with nulls as nulls can be updated to a value while fixing errors in the data
+
+Select *
+from layoffs_staging3 t1
+join layoffs_staging3 t2
+	on t1.company = t2.company
+    and t1.location = t2.location
+where (t1.industry is null or t1.industry = '')
+and (t2.industry is not null or t2.industry != '');
+
+select *
+from layoffs_staging3
+where company='Airbnb';
+
+select *
+from layoffs_staging3;
+
+update layoffs_staging3 t1
+join layoffs_staging3 t2
+	on t1.company = t2.company
+set t1.industry=t2.industry
+where (t1.industry is null or t1.industry = '')
+and (t2.industry is not null or t2.industry != '');
+
+select *
+from layoffs_staging3
+where total_laid_off is null;
+
+delete
+from layoffs_staging3
+where total_laid_off is null
+and percentage_laid_off is null;
+
+alter table layoffs_staging3
+drop column `row_number`;
+
+select *
+from layoffs_staging3;
+
+
+-- Exploratory Data Analysis
+
+select *
+from layoffs_staging3;
+
+select max(total_laid_off), max(percentage_laid_off)
+from layoffs_staging3;
+
+select *
+from layoffs_staging3
+where percentage_laid_off=1
+order by total_laid_off desc;
+
+select *
+from layoffs_staging3
+where percentage_laid_off=1
+order by funds_raised_millions desc;
+
+select company, Sum(total_laid_off)
+from layoffs_staging3
+group by company
+order by 2 desc;
+
+select min(`date`),max(`date`)
+from layoffs_staging3;
+
+-- To find out which industry got hit the most 
+select industry, Sum(total_laid_off)
+from layoffs_staging3
+group by industry
+order by 2 desc;
+
+-- To find out the country with the maximum layoffs
+select country, Sum(total_laid_off)
+from layoffs_staging3
+group by country
+order by 2 desc;
+
+-- To find out the number of layoffs on each date
+select `date`, Sum(total_laid_off)
+from layoffs_staging3
+group by `date`
+order by 2 desc;
+
+-- To find out the number layoffs in each year
+select year(`date`), Sum(total_laid_off)
+from layoffs_staging3
+group by year(`date`)
+order by 1 desc;
+
+-- To find out the number of layoffs of companies in different stages
+select stage, Sum(total_laid_off)
+from layoffs_staging3
+group by stage
+order by 2 desc;
+
+-- To see the layoffs in each month yearwise
+select substring(`date`,1,7) as `Month`, sum(total_laid_off)
+from layoffs_staging3
+group by `Month`
+Order by 1;
+
+-- To find the number people laid off till that point 
+with rollingtotal as 
+(
+	select substring(`date`,1,7)  as `Month`, sum(total_laid_off) as total_off
+	from layoffs_staging3
+    where substring(`date`,1,7) is not null
+	group by `Month`
+	Order by 1
+)
+select `Month`, total_off,sum(total_off) over (order by `Month`) as Rolling_total
+from rollingtotal;
+
+select company, Sum(total_laid_off)
+from layoffs_staging3
+group by company
+order by 2 desc;
+
+select company, Year(`date`),Sum(total_laid_off)
+from layoffs_staging3
+group by company, Year(`date`)
+order by 3 desc;
+-- We are finding the top 5 companies in terms of layoffs each year
+
+with company_year (company,years,total_laid_off) as 
+(
+select company, Year(`date`) as years,Sum(total_laid_off)
+from layoffs_staging3
+group by company, years
+) ,company_year_rank as
+(select *, dense_rank() over(partition by years order by total_laid_off desc) as Ranking
+from company_year
+where years is not null
+)
+select *
+from company_year_rank
+where ranking <=5;
